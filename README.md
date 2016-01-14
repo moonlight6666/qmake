@@ -1,7 +1,7 @@
 # qmake
-%% An Erlang Multi-process compile tool
-%% Based on make.erl and mmake.erl
-%% Node: The thread number of CPU maybe the best worker num 
+An Erlang Multi-process compile tool
+Based on make.erl and mmake.erl
+Node: The thread number of CPU maybe the best worker num 
 
 erl  -pa ../ebin  -s qmake all  -noshell -s init stop
 
