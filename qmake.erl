@@ -211,7 +211,7 @@ do_worker(L, Opts, NoExec, Load, Worker) ->
     Pids = [
         spawn_link(fun() -> worker_proc(Opts, NoExec, Load, Self, Ref) end)
         || _N <- lists:seq(1, Worker)],
-    io:format("starting bulid ~p files...~n", [length(L)]),
+    io:format("Starting bulid ~p files...~n", [length(L)]),
     {_, S, _} = os:timestamp(),
     put(start_second, S),
     put(file_num, length(L)),
@@ -226,15 +226,24 @@ init_start([F|Fs], [P|Ps]) ->
 
 handle_error(File) ->
     FileName = filename:basename(File),
-    io:format("~n~n******************COMPILE ERROR : ~s *****************~n~n", [FileName]).
+    io:format(
+        "~n"
+        "-------------------------------------------------------------~n"
+        "                    Error in file: ~s                        ~n"
+        "-------------------------------------------------------------~n~n",
+        [FileName]).
 
 worker_mamager([], 0, _Ref) ->
     {_, S, _} = os:timestamp(),
     S1 = S - get(start_second),
-    io:format("~n~n"
-              "***********************ALL FINISH***********************~n~n"),
-    io:format("    built ~p files, used ~p minute, ~p second ~n~n",[get(file_num),S1 div 60, S1 rem 60]),
-    io:format("********************************************************~n~n");
+    io:format(
+        "~n~n"
+        "-------------------------------------------------------------~n"
+        "                          All success                        ~n"
+        "           Built ~p files, used ~p minute, ~p second         ~n"
+        "-------------------------------------------------------------~n~n",
+        [get(file_num), S1 div 60, S1 rem 60]
+    );
 worker_mamager([], N, Ref) ->
     receive
         {do_finish, P, Ref} ->
@@ -274,7 +283,10 @@ worker_proc(Opts, NoExec, Load, Parent, Ref) ->
                     worker_proc(Opts, NoExec, Load, Parent, Ref)
             end;
         all_finish ->
-            ok
+            ok;
+        _Other ->
+            io:format("receive unknown msg:~p~n", [_Other]),
+            throw(error)
     end.
 
 recompilep(File, NoExec, Load, Opts) ->
@@ -286,16 +298,15 @@ recompilep(File, NoExec, Load, Opts) ->
 		  false ->
 		      ObjName
 	      end,
-    case exists(ObjFile) of
-	true ->
-	    recompilep1(File, NoExec, Load, Opts, ObjFile);
-	false ->
-	    recompile(File, NoExec, Load, Opts)
+    case file:read_file_info(ObjFile) of
+        {ok, Obj} ->
+            recompilep1(File, NoExec, Load, Opts, Obj);
+        _ ->
+            recompile(File, NoExec, Load, Opts)
     end.
  
-recompilep1(File, NoExec, Load, Opts, ObjFile) ->
+recompilep1(File, NoExec, Load, Opts, Obj) ->
     {ok, Erl} = file:read_file_info(lists:append(File, ".erl")),
-    {ok, Obj} = file:read_file_info(ObjFile),
 	 recompilep1(Erl, Obj, File, NoExec, Load, Opts).
 
 recompilep1(#file_info{mtime=Te},
@@ -338,14 +349,6 @@ recompile(File, false, netload, Opts) ->
     io:format("Recompile: ~s\n",[File]),
     c:nc(File, Opts).
 
-exists(File) ->
-    case file:read_file_info(File) of
-	{ok, _} ->
-	    true;
-	_ ->
-	    false
-    end.
-
 coerce_2_list(X) when is_atom(X) ->
     atom_to_list(X);
 coerce_2_list(X) ->
@@ -362,13 +365,23 @@ check_includes(File, IncludePath, ObjMTime) ->
 	_Error ->
 	    false
     end.
-    
+
+get_incfile_info(IncFile) ->
+    case get({incfile, IncFile}) of
+        undefined ->
+            FileInfo = file:read_file_info(IncFile),
+            put({incfile, IncFile}, FileInfo),
+            FileInfo;
+        FileInfo ->
+            FileInfo
+    end.
+
 check_includes2(Epp, File, ObjMTime) ->
     case epp:parse_erl_form(Epp) of
 	{ok, {attribute, 1, file, {File, 1}}} ->
 	    check_includes2(Epp, File, ObjMTime);
 	{ok, {attribute, 1, file, {IncFile, 1}}} ->
-	    case file:read_file_info(IncFile) of
+	    case get_incfile_info(IncFile) of
 		{ok, #file_info{mtime=MTime}} when MTime>ObjMTime ->
 		    epp:close(Epp),
 		    true;
